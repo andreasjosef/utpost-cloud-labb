@@ -19,6 +19,7 @@ flowchart LR
   S -->|ja| M[merge – knappen är grön]
   S -->|nej| F[fixa, pusha igen<br/>körningen startar om]
   M --> MAIN[main är alltid byggbar]
+  MAIN --> D[Deploy → Azure staging<br/>OIDC-inloggning · byter image · väntar på rätt sha · röktest]
 ```
 
 ## Vad som körs, och varför
@@ -32,6 +33,7 @@ flowchart LR
 | Typkontroll (M2, M5) | `npm run typecheck` (codegen + `vue-tsc` + `tsc`) | ett fält som tagits bort ur schemat men används i en vy – kedjan schema → fråga → vy | ~10 s |
 | Integration (M5) | `npm run test:api` mot Postgres och Mongo som *services* | resolvers som inte stämmer med databasen, N+1 som kommit tillbaka, mutationer utan inloggningskrav – det klientens mockade tester aldrig ser | ~40 s inkl. start av databaserna |
 | Image (M4) | `docker/build-push-action` på `api/Dockerfile` och `client/Dockerfile` | en Dockerfile som inte går att bygga; på `main` publiceras imagerna med `sha-`tagg | ~1,5 min |
+| Deploy (M6) | `az containerapp update` på api och client (OIDC, inga secrets) · väntar tills `/api/health` visar commitens sha och `latestReadyRevisionName` är `…--sha-<7>` · röktest av `/graphql` via nginx | en image som inte startar i molnet, en client som inte når api:t, en tom databas – det CI aldrig ser. Körs bara på `main`, efter Image och Integration | _fylls i efter första körningen_ |
 
 `npm ci` (~25 s) dominerar – den installerar alla tre workspaces inklusive React-klientens beroenden. När `web/` tas bort (M6) halveras tiden.
 
@@ -41,6 +43,7 @@ flowchart LR
 - Kräver status checks **Kvalitet**, **Bygg**, **Integration** och **Image** gröna innan merge
 - Kräver att branchen är uppdaterad mot `main` före merge (annars testas en kod som aldrig kommer att finnas)
 - Gäller även admins
+- **Deploy → Azure staging** är *inte* en required check: den körs aldrig på en PR (bara vid push till `main`), så en PR skulle vänta på den för evigt
 
 ## Vanliga fel vi sett
 
