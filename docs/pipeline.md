@@ -33,7 +33,7 @@ flowchart LR
 | Typkontroll (M2, M5) | `npm run typecheck` (codegen + `vue-tsc` + `tsc`) | ett fält som tagits bort ur schemat men används i en vy – kedjan schema → fråga → vy | ~10 s |
 | Integration (M5) | `npm run test:api` mot Postgres och Mongo som *services* | resolvers som inte stämmer med databasen, N+1 som kommit tillbaka, mutationer utan inloggningskrav – det klientens mockade tester aldrig ser | ~40 s inkl. start av databaserna |
 | Image (M4) | `docker/build-push-action` på `api/Dockerfile` och `client/Dockerfile` | en Dockerfile som inte går att bygga; på `main` publiceras imagerna med `sha-`tagg | ~1,5 min |
-| Deploy (M6) | `az containerapp update` på api och client (OIDC, inga secrets) · väntar tills `/api/health` visar commitens sha och `latestReadyRevisionName` är `…--sha-<7>` · röktest av `/graphql` via nginx | en image som inte startar i molnet, en client som inte når api:t, en tom databas – det CI aldrig ser. Körs bara på `main`, efter Image och Integration | _fylls i efter första körningen_ |
+| Deploy (M6) | `az containerapp update` på api och client (OIDC, inga secrets) · väntar tills `/api/health` visar commitens sha och `latestReadyRevisionName` är `…--sha-<7>` · röktest av `/graphql` via nginx | en image som inte startar i molnet, en client som inte når api:t, en tom databas – det CI aldrig ser. Körs bara på `main`, efter Image och Integration | ~1,5 min (88 s på `main`, merge av PR #1) |
 
 `npm ci` (~25 s) dominerar – den installerar alla tre workspaces inklusive React-klientens beroenden. När `web/` tas bort (M6) halveras tiden.
 
@@ -44,6 +44,18 @@ flowchart LR
 - Kräver att branchen är uppdaterad mot `main` före merge (annars testas en kod som aldrig kommer att finnas)
 - Gäller även admins
 - **Deploy → Azure staging** är *inte* en required check: den körs aldrig på en PR (bara vid push till `main`), så en PR skulle vänta på den för evigt
+
+### Revisioner i staging
+
+| Händelse | Revision |
+|---|---|
+| Skapad av `skapa-staging.sh` | `utpost-staging--e5oah21` |
+| Deploy av `4abbf19` – mellanrevisionen (ny api, gammal client) | `utpost-staging--sha-4abbf19-api` |
+| Deploy av `4abbf19` – den som tar trafiken | `utpost-staging--sha-4abbf19` |
+| Rollback: api tillbaka till `6853bfb` (~40 s tills `/api/health` bytte sha) | `utpost-staging--rollback-1` |
+| Tillbaka: api till `4abbf19` igen (~40 s) | `utpost-staging--framat-1` |
+
+Rollback = `az containerapp update --container-name api --image …-api:sha-<förra> --revision-suffix rollback-N`. Ett suffix kan bara användas en gång per app. Ett byte av JWT-hemligheten (`az containerapp secret set`) ger *ingen* ny revision – det märks först efter `az containerapp revision restart` (~1 min), sha:n är densamma hela tiden.
 
 ## Vanliga fel vi sett
 
